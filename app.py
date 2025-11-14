@@ -11,6 +11,8 @@ import os
 from PIL import Image
 from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing.image import img_to_array
+import gdown   # NEW
+import requests   # NEW
 
 # ---------------------
 # 🧩 Page Setup
@@ -28,15 +30,29 @@ PROTO_TXT = "deploy.prototxt"
 CAFFE_MODEL = "res10_300x300_ssd_iter_140000.caffemodel"
 
 # ---------------------
-# ✅ Check Files
+# ✅ Auto-download Large Model File (Google Drive)
 # ---------------------
-missing_files = []
-for f in [MODEL_KERAS, PROTO_TXT, CAFFE_MODEL]:
-    if not os.path.exists(f):
-        missing_files.append(f)
 
-if missing_files:
-    st.error(f"🚨 Missing file(s): {', '.join(missing_files)}. Please add them to your app folder.")
+MODEL_DRIVE_URL = "https://drive.google.com/uc?id=1XGnfgW8PpetG9JaRmSek_mm9rhXHigO8"
+
+# Auto-download .keras file if not exists
+if not os.path.exists(MODEL_KERAS):
+    st.warning("Downloading mask_detector_model.keras from Google Drive (only first time)...")
+    try:
+        gdown.download(MODEL_DRIVE_URL, MODEL_KERAS, quiet=False)
+        st.success("mask_detector_model.keras downloaded successfully!")
+    except Exception as e:
+        st.error(f"Could not download the model: {e}")
+        st.stop()
+
+# Check remaining required files
+missing = []
+for f in [PROTO_TXT, CAFFE_MODEL]:
+    if not os.path.exists(f):
+        missing.append(f)
+
+if missing:
+    st.error(f"🚨 Missing file(s): {', '.join(missing)}. Please add them to your app folder.")
     st.stop()
 
 # ---------------------
@@ -63,15 +79,12 @@ model, FACE_NET, MODEL_INPUT_SIZE = load_models()
 if model is None or FACE_NET is None:
     st.stop()
 
-# 🔁 You can swap these labels if you want the UI inverted.
-# Example: {0: "No Mask", 1: "Mask"} will display inverted text (but percentages will still match).
 CLASS_LABELS = {0: "No Mask", 1: "Mask"}
 
 # ---------------------
 # 🔍 DNN Face Detection
 # ---------------------
 def detect_faces_dnn(frame):
-    """Detect faces using OpenCV DNN and return bounding boxes."""
     (h, w) = frame.shape[:2]
     blob = cv2.dnn.blobFromImage(cv2.resize(frame, (300, 300)),
                                  1.0, (300, 300), (104.0, 177.0, 123.0))
@@ -81,7 +94,7 @@ def detect_faces_dnn(frame):
 
     for i in range(0, detections.shape[2]):
         confidence = detections[0, 0, i, 2]
-        if confidence > 0.5:  # threshold
+        if confidence > 0.5:
             box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
             (x1, y1, x2, y2) = box.astype("int")
             x1, y1 = max(0, x1), max(0, y1)
@@ -90,14 +103,9 @@ def detect_faces_dnn(frame):
     return faces
 
 # ---------------------
-# 🧠 Mask Prediction (FIXED: label & confidence consistent)
+# 🧠 Mask Prediction
 # ---------------------
 def predict_face_mask(face_bgr):
-    """
-    Predict mask presence on a cropped BGR face image.
-    This implementation returns (confidence, label) where `confidence` is
-    the probability for the displayed `label` (consistent).
-    """
     face_rgb = cv2.cvtColor(face_bgr, cv2.COLOR_BGR2RGB)
     resized = cv2.resize(face_rgb, MODEL_INPUT_SIZE)
     arr = img_to_array(resized).astype("float32") / 255.0
@@ -105,22 +113,17 @@ def predict_face_mask(face_bgr):
 
     preds = model.predict(arr, verbose=0)[0]
 
-    # Interpret outputs robustly for both sigmoid (1) and softmax (2) shapes
     if preds.size == 1:
-        # Single sigmoid output -> treat index 0 as "Mask prob"
         mask_prob = float(preds[0])
         no_mask_prob = 1.0 - mask_prob
-        # predicted_index = 0 means model favors "Mask"
         predicted_index = 0 if mask_prob >= no_mask_prob else 1
     elif preds.size == 2:
-        # Softmax two-class output, assume order [Mask, No Mask]
         mask_prob = float(preds[0])
         no_mask_prob = float(preds[1])
         predicted_index = 0 if mask_prob >= no_mask_prob else 1
     else:
         return 0.0, "ERROR"
 
-    # Use predicted_index to pick UI label and the corresponding probability
     label = CLASS_LABELS.get(predicted_index, "Unknown")
     confidence = mask_prob if predicted_index == 0 else no_mask_prob
 
@@ -137,7 +140,6 @@ def annotate_frame(frame):
             continue
 
         confidence, label = predict_face_mask(face_roi)
-        # color follows displayed label (green = Mask, red = No Mask)
         color = (0, 255, 0) if label == "Mask" else (0, 0, 255)
         text = f"{label} ({confidence*100:.1f}%)"
         cv2.putText(frame, text, (x, y - 10),
@@ -172,7 +174,6 @@ if mode == "Upload Image":
             image = Image.open(uploaded).convert("RGB")
             frame = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
 
-            # Resize large images for better processing
             max_dim = 800
             if max(image.size) > max_dim:
                 scale = max_dim / max(image.size)
@@ -260,3 +261,4 @@ st.markdown("*Project:* Real-time Face Mask Detection  \n*Developed by Soham Say
 # cd FACE_MASK_DETECTOR
 # .\venv\Scripts\Activate.ps1
 # streamlit run app.py
+
