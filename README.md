@@ -93,3 +93,9 @@ Real-time accuracy: Excellent
 Model accuracy: 100%
 
 Face detection: Robust even with different angles, lighting, and multiple faces
+👨‍💻 Author : Soham Saykar
+
+B.Tech – Artificial Intelligence & Data Science
+Pune, Maharashtra
+GitHub: 
+LinkedIn: 
