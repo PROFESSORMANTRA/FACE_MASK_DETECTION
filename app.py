@@ -262,3 +262,4 @@ st.markdown("*Project:* Real-time Face Mask Detection  \n*Developed by Soham Say
 # .\venv\Scripts\Activate.ps1
 # streamlit run app.py
 
+
